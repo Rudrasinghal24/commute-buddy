@@ -7,10 +7,35 @@ import com.example.data.TransitMode
 import com.example.data.TransitStop
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // Pure formatting, comparison, and time calculation helpers for CommuteBuddy UI
 object CommuteFormatters {
     fun formatEtaMinutes(minutes: Int): String = "$minutes min"
+
+    /**
+     * Shared duration formatter taking durationSeconds (Int):
+     * - Under 60 min (< 3600s): "X min"
+     * - 60 min to < 24 hr (3600s..86399s): "X hr Y min" (or "X hr" if Y == 0)
+     * - >= 24 hr (>= 86400s): "X d Y hr" (or "X d" if Y == 0)
+     */
+    fun formatDuration(durationSeconds: Int): String {
+        val safeSeconds = durationSeconds.coerceAtLeast(0)
+        if (safeSeconds < 3600) {
+            val mins = (safeSeconds / 60.0).roundToInt().coerceAtLeast(1)
+            return "$mins min"
+        }
+        if (safeSeconds < 86400) {
+            val totalMinutes = (safeSeconds / 60.0).roundToInt()
+            val hours = totalMinutes / 60
+            val minutes = totalMinutes % 60
+            return if (minutes == 0) "$hours hr" else "$hours hr $minutes min"
+        }
+        val totalHours = (safeSeconds / 3600.0).roundToInt()
+        val days = totalHours / 24
+        val hours = totalHours % 24
+        return if (hours == 0) "$days d" else "$days d $hours hr"
+    }
 
     fun formatDistanceMeters(meters: Int): String {
         return if (meters >= 1000) {
@@ -24,11 +49,11 @@ object CommuteFormatters {
     // Formats "Saves ₹20, adds 8 min vs fastest" comparison text for the selected route
     fun formatVsFastest(selected: Route, allRoutes: List<Route>): String {
         val fastest = allRoutes.find { it.label == RouteLabel.FASTEST }
-            ?: allRoutes.minByOrNull { it.minutes }
+            ?: allRoutes.minByOrNull { it.durationSeconds }
             ?: return "Saves ₹0, adds 0 min vs fastest"
 
         val savedInr = fastest.costInr - selected.costInr
-        val extraMin = (selected.minutes - fastest.minutes).coerceAtLeast(0)
+        val extraMin = ((selected.durationSeconds - fastest.durationSeconds) / 60.0).roundToInt().coerceAtLeast(0)
 
         return when {
             savedInr > 0 -> "Saves ₹$savedInr, adds $extraMin min vs fastest"

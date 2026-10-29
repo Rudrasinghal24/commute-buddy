@@ -130,18 +130,10 @@ fun RouteCard(
                     )
                 }
 
-                // Top row: Big bold time ("71 min") + hr/min & distance ("1 hr 11 min • 41 km • Fastest") on left, cost on right
-                val hrMinLabel = if (route.minutes >= 60) {
-                    val hrs = route.minutes / 60
-                    val mins = route.minutes % 60
-                    if (mins > 0) "${hrs} hr ${mins} min" else "${hrs} hr"
-                } else null
+                // Top row: Big bold duration + distance ("41 km • Fastest") on left, verified costDisplay on right
+                val formattedDuration = CommuteFormatters.formatDuration(route.durationSeconds)
                 val kmLabel = "${route.distanceKm.toInt()} km"
-                val subMetaText = if (hrMinLabel != null) {
-                    "• $hrMinLabel ($kmLabel) • ${route.label.display}"
-                } else {
-                    "• $kmLabel • ${route.label.display}"
-                }
+                val subMetaText = "• $kmLabel • ${route.label.display}"
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -154,7 +146,7 @@ fun RouteCard(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "${route.minutes} min",
+                            text = formattedDuration,
                             fontFamily = RobotoFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
@@ -169,7 +161,7 @@ fun RouteCard(
                     }
 
                     Text(
-                        text = "₹${route.costInr}",
+                        text = route.costDisplay,
                         fontFamily = RobotoFontFamily,
                         fontWeight = FontWeight.Medium,
                         fontSize = 16.sp,

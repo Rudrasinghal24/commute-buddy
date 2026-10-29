@@ -1,64 +1,137 @@
 package com.example.data
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
 data class DelhiPlace(
     val id: String,
     val name: String,
     val area: String,
     val category: String,
     val lat: Double,
-    val lng: Double
+    val lng: Double,
+    val stationId: String? = null
 )
 
-// 30 real Delhi NCR places (metro stations, railway stations, malls, colleges)
+// Live India-wide places client backed by CommuteBuddy backend (/api/places and /api/places/reverse).
+// Hardcoded DELHI_PLACES list has been removed per Truth-Over-Completeness policy.
 object DelhiPlacesData {
-    val places: List<DelhiPlace> = listOf(
-        // Metro Stations (10)
-        DelhiPlace("m1", "Rajiv Chowk Metro Station", "Connaught Place, New Delhi", "Metro Station", 28.6328, 77.2197),
-        DelhiPlace("m2", "Kashmere Gate Metro Station", "Inter State Bus Terminus, Delhi", "Metro Station", 28.6675, 77.2282),
-        DelhiPlace("m3", "Hauz Khas Metro Station", "Outer Ring Rd, South Delhi", "Metro Station", 28.5433, 77.2066),
-        DelhiPlace("m4", "Botanical Garden Metro Station", "Sector 38, Noida", "Metro Station", 28.5641, 77.3343),
-        DelhiPlace("m5", "Millennium City Centre Gurugram", "Sector 29, Gurugram", "Metro Station", 28.4595, 77.0726),
-        DelhiPlace("m6", "Chandni Chowk Metro Station", "Old Delhi", "Metro Station", 28.6579, 77.2301),
-        DelhiPlace("m7", "Dwarka Sector 21 Metro Station", "Sector 21, Dwarka", "Metro Station", 28.5522, 77.0583),
-        DelhiPlace("m8", "Nehru Place Metro Station", "Nehru Place, South Delhi", "Metro Station", 28.5515, 77.2517),
-        DelhiPlace("m9", "Cyber Hub Rapid Metro", "DLF Cyber City, Gurugram", "Metro Station", 28.4949, 77.0890),
-        DelhiPlace("m10", "Lajpat Nagar Metro Station", "Central Market, Lajpat Nagar", "Metro Station", 28.5701, 77.2435),
+    // Kept as an empty list for legacy callers; all places come from the backend API.
+    val places: List<DelhiPlace> = emptyList()
 
-        // Railway Stations (7)
-        DelhiPlace("r1", "New Delhi Railway Station", "Paharganj / Ajmeri Gate, New Delhi", "Railway Station", 28.6429, 77.2191),
-        DelhiPlace("r2", "Old Delhi Railway Station", "Chandni Chowk, Delhi Junction", "Railway Station", 28.6606, 77.2274),
-        DelhiPlace("r3", "Hazrat Nizamuddin Railway Station", "Sarai Kale Khan, New Delhi", "Railway Station", 28.5876, 77.2508),
-        DelhiPlace("r4", "Anand Vihar Terminal Railway Station", "Anand Vihar, East Delhi", "Railway Station", 28.6469, 77.3160),
-        DelhiPlace("r5", "Delhi Sarai Rohilla Railway Station", "Karol Bagh, New Delhi", "Railway Station", 28.6625, 77.1869),
-        DelhiPlace("r6", "Ghaziabad Junction Railway Station", "Railway Road, Ghaziabad", "Railway Station", 28.6534, 77.4272),
-        DelhiPlace("r7", "Gurgaon Railway Station", "Rajendra Park, Gurugram", "Railway Station", 28.4889, 77.0113),
+    var backendBaseUrl: String = "http://10.0.2.2:3001"
 
-        // Malls & Commercial Hubs (7)
-        DelhiPlace("mall1", "Select CITYWALK Mall", "Saket District Centre, New Delhi", "Mall", 28.5284, 77.2190),
-        DelhiPlace("mall2", "DLF Mall of India", "Sector 18, Noida", "Mall", 28.5672, 77.3211),
-        DelhiPlace("mall3", "Ambience Mall Vasant Kunj", "Nelson Mandela Marg, Vasant Kunj", "Mall", 28.5407, 77.1553),
-        DelhiPlace("mall4", "Ambience Mall Gurugram", "NH-48, Sector 24, Gurugram", "Mall", 28.5042, 77.0964),
-        DelhiPlace("mall5", "Pacific Mall Tagore Garden", "Najafgarh Rd, Subhash Nagar", "Mall", 28.6423, 77.1066),
-        DelhiPlace("mall6", "Vegas Mall Dwarka", "Sector 14, Dwarka, New Delhi", "Mall", 28.5993, 77.0303),
-        DelhiPlace("mall7", "Connaught Place Inner Circle", "Block A, Connaught Place", "Commercial Hub", 28.6315, 77.2167),
-
-        // Colleges & Universities (6)
-        DelhiPlace("c1", "IIT Delhi", "Hauz Khas, New Delhi", "College", 28.5450, 77.1926),
-        DelhiPlace("c2", "Delhi Technological University (DTU)", "Shahbad Daulatpur, Rohini", "College", 28.7499, 77.1170),
-        DelhiPlace("c3", "AIIMS New Delhi", "Ansari Nagar, Aurobindo Marg", "College", 28.5672, 77.2100),
-        DelhiPlace("c4", "University of Delhi North Campus", "Vishwavidyalaya, Delhi", "College", 28.6880, 77.2100),
-        DelhiPlace("c5", "Jawaharlal Nehru University (JNU)", "New Mehrauli Road, Munirka", "College", 28.5402, 77.1666),
-        DelhiPlace("c6", "Netaji Subhas University of Technology (NSUT)", "Sector 3, Dwarka", "College", 28.6091, 77.0370)
-    )
-
-    // Match max 5 places by name or area
     fun searchPlaces(query: String, maxResults: Int = 5): List<DelhiPlace> {
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) return places.take(maxResults)
-        return places.filter { place ->
-            place.name.contains(trimmed, ignoreCase = true) ||
-                place.area.contains(trimmed, ignoreCase = true) ||
-                place.category.contains(trimmed, ignoreCase = true)
-        }.take(maxResults)
+        return emptyList()
     }
+
+    suspend fun fetchPlacesFromBackend(
+        query: String,
+        maxResults: Int = 5,
+        lat: Double? = null,
+        lng: Double? = null
+    ): List<DelhiPlace> = withContext(Dispatchers.IO) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return@withContext emptyList()
+
+        val encodedQ = URLEncoder.encode(trimmed, "UTF-8")
+        val biasParams = if (lat != null && lng != null) "&lat=$lat&lng=$lng" else ""
+        val urlStr = "$backendBaseUrl/api/places?q=$encodedQ$biasParams"
+
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 3500
+            readTimeout = 3500
+            setRequestProperty("Accept", "application/json")
+        }
+
+        val code = conn.responseCode
+        if (code != 200) {
+            throw IllegalStateException("Places search failed with HTTP $code")
+        }
+
+        val body = conn.inputStream.bufferedReader().use { it.readText() }
+        val root = JSONObject(body)
+        val arr = root.optJSONArray("value") ?: return@withContext emptyList()
+
+        val results = ArrayList<DelhiPlace>(maxResults)
+        for (i in 0 until minOf(arr.length(), maxResults)) {
+            val v = arr.optJSONObject(i) ?: continue
+            val placeLat = v.optDouble("lat", Double.NaN)
+            val placeLng = v.optDouble("lng", Double.NaN)
+            if (placeLat.isNaN() || placeLng.isNaN()) continue
+            val stationId = v.optString("stationId", "").ifEmpty {
+                v.optJSONObject("stationHint")?.optString("stationId", "")?.ifEmpty {
+                    v.optJSONObject("stationHint")?.optString("id", "")?.ifEmpty { null }
+                }
+            }
+            val area = v.optString("area", "").ifEmpty {
+                v.optString("fullAddress", "India")
+            }
+            val category = v.optString("category", "").ifEmpty {
+                v.optString("placeType", "Place")
+            }
+            results.add(
+                DelhiPlace(
+                    id = v.optString("id", "place_$i"),
+                    name = v.optString("name", trimmed),
+                    area = area,
+                    category = category,
+                    lat = placeLat,
+                    lng = placeLng,
+                    stationId = stationId
+                )
+            )
+        }
+        results
+    }
+
+    suspend fun reverseGeocodeFromBackend(lat: Double, lng: Double): DelhiPlace? =
+        withContext(Dispatchers.IO) {
+            val urlStr = "$backendBaseUrl/api/places/reverse?lat=$lat&lng=$lng"
+            val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 3500
+                readTimeout = 3500
+                setRequestProperty("Accept", "application/json")
+            }
+
+            val code = conn.responseCode
+            if (code == 404) return@withContext null
+            if (code != 200) {
+                throw IllegalStateException("Reverse geocode failed with HTTP $code")
+            }
+
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val root = JSONObject(body)
+            val v = root.optJSONObject("value") ?: return@withContext null
+            val placeLat = v.optDouble("lat", Double.NaN)
+            val placeLng = v.optDouble("lng", Double.NaN)
+            if (placeLat.isNaN() || placeLng.isNaN()) return@withContext null
+            val stationId = v.optString("stationId", "").ifEmpty {
+                v.optJSONObject("stationHint")?.optString("stationId", "")?.ifEmpty {
+                    v.optJSONObject("stationHint")?.optString("id", "")?.ifEmpty { null }
+                }
+            }
+            val area = v.optString("area", "").ifEmpty {
+                v.optString("fullAddress", "India")
+            }
+            val category = v.optString("category", "").ifEmpty {
+                v.optString("placeType", "Place")
+            }
+
+            DelhiPlace(
+                id = v.optString("id", "rev_${lat}_$lng"),
+                name = v.optString("name", "Pinned Location"),
+                area = area,
+                category = category,
+                lat = placeLat,
+                lng = placeLng,
+                stationId = stationId
+            )
+        }
 }

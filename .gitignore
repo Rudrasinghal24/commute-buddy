@@ -15,4 +15,8 @@
 .cxx
 local.properties
 .env
+server/.env
+server/node_modules
+server/dist
+server/logs
 debug.keystore

@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.DataLoadState
+import com.example.data.DelhiPlace
 import com.example.data.DelhiPlacesData
 import com.example.lib.LocalTripContext
 import com.example.ui.theme.MapsAccentBlue
@@ -58,6 +59,7 @@ import com.example.ui.theme.MapsSelectedTint
 import com.example.ui.theme.MapsSurface
 import com.example.ui.theme.MapsTextPrimary
 import com.example.ui.theme.MapsTextSecondary
+import kotlinx.coroutines.delay
 
 private val DestinationRed = Color(0xFFD93025)
 
@@ -80,6 +82,8 @@ fun SearchBar(
     var startQuery by rememberSaveable { mutableStateOf("") }
     var endQuery by rememberSaveable { mutableStateOf("") }
     var listState by remember { mutableStateOf(DataLoadState.READY) }
+    var matchedPlaces by remember { mutableStateOf<List<DelhiPlace>>(emptyList()) }
+    var retryCounter by remember { mutableStateOf(0) }
 
     LaunchedEffect(tripContext.startPlace, tripContext.endPlace) {
         tripContext.startPlace?.let { startQuery = it.name }
@@ -92,9 +96,22 @@ fun SearchBar(
         FocusedField.NONE -> ""
     }
 
-    val matchedPlaces = remember(activeQuery, focusedField) {
-        if (focusedField == FocusedField.NONE) emptyList()
-        else DelhiPlacesData.searchPlaces(activeQuery, maxResults = 5)
+    LaunchedEffect(activeQuery, focusedField, retryCounter) {
+        if (focusedField == FocusedField.NONE || activeQuery.trim().isEmpty()) {
+            matchedPlaces = emptyList()
+            listState = DataLoadState.EMPTY
+            return@LaunchedEffect
+        }
+        listState = DataLoadState.LOADING
+        delay(300L)
+        try {
+            val places = DelhiPlacesData.fetchPlacesFromBackend(activeQuery, maxResults = 5)
+            matchedPlaces = places
+            listState = if (places.isEmpty()) DataLoadState.EMPTY else DataLoadState.READY
+        } catch (_: Exception) {
+            matchedPlaces = emptyList()
+            listState = DataLoadState.ERROR
+        }
     }
 
     Column(
@@ -405,9 +422,7 @@ fun SearchBar(
                     }
                 },
                 onRetry = {
-                    if (focusedField == FocusedField.START) startQuery = ""
-                    if (focusedField == FocusedField.END) endQuery = ""
-                    listState = DataLoadState.READY
+                    retryCounter += 1
                 }
             )
         }

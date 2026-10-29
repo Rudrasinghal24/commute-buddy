@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,8 +53,10 @@ import com.example.components.RouteCardSkeleton
 import com.example.components.SearchBar
 import com.example.components.StepByStepView
 import com.example.data.DataLoadState
+import com.example.data.DelhiPlacesData
 import com.example.lib.LocalTripContext
 import com.example.lib.TripContextProvider
+import kotlinx.coroutines.launch
 import com.example.ui.theme.MapsAccentBlue
 import com.example.ui.theme.MapsBackground
 import com.example.ui.theme.MapsBorder
@@ -78,6 +81,7 @@ private fun MapScreenContent(
     modifier: Modifier = Modifier
 ) {
     val tripContext = LocalTripContext.current
+    val coroutineScope = rememberCoroutineScope()
     var recenterTrigger by rememberSaveable { mutableIntStateOf(0) }
     var isChatExpanded by rememberSaveable { mutableStateOf(false) }
 
@@ -124,7 +128,16 @@ private fun MapScreenContent(
 
                 // Round "my location" button (white, 48px, soft shadow) on the right side above the bottom area
                 MyLocationButton(
-                    onClick = { recenterTrigger += 1 },
+                    onClick = {
+                        recenterTrigger += 1
+                        coroutineScope.launch {
+                            runCatching {
+                                DelhiPlacesData.reverseGeocodeFromBackend(DELHI_LAT, DELHI_LNG)
+                            }.getOrNull()?.let { place ->
+                                tripContext.updateStart(place)
+                            }
+                        }
+                    },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(

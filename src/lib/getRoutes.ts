@@ -1,249 +1,244 @@
-import { DelhiPlace } from '../data/places';
-import { calculateRouteCostInr } from './fares';
-import { Route, RouteLabel, RouteStep, VehicleMode } from './types';
+import { DelhiPlace, getBackendBaseUrl } from '../data/places.js';
+import { formatVerifiedFareDisplay, mapEnvelopeStatusToDataLabel } from './fares.js';
+import { CrowdLevel, Route, RouteLabel, RouteStep, VehicleMode } from './types.js';
 
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const r = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return r * c;
+function mapModeString(mode: string): VehicleMode {
+  const m = mode.toLowerCase();
+  if (m === 'metro') return 'Metro';
+  if (m === 'bus') return 'Bus';
+  if (m === 'train' || m === 'rrts') return 'Train';
+  if (m === 'car') return 'Car';
+  if (m === 'bike' || m === 'auto' || m === 'e_rickshaw') return 'Bike';
+  if (m === 'walk') return 'Walk';
+  return 'Mix';
 }
 
-function buildDelhiCorridorPath(
-  start: DelhiPlace,
-  end: DelhiPlace,
-  label: RouteLabel
-): [number, number][] {
-  const isGurugramStart = start.lat < 28.52 && start.lng < 77.12;
-  const isGurugramEnd = end.lat < 28.52 && end.lng < 77.12;
-  const isNoidaStart = start.lng > 77.28;
-  const isNoidaEnd = end.lng > 77.28;
-
-  if ((isGurugramStart && isNoidaEnd) || (isNoidaStart && isGurugramEnd)) {
-    const forward = isGurugramStart;
-    const gPlace = forward ? start : end;
-    const nPlace = forward ? end : start;
-
-    let corridor: [number, number][];
-    if (label === 'Fastest') {
-      corridor = [
-        [gPlace.lat, gPlace.lng],
-        [28.4722, 77.0725],
-        [28.5042, 77.0964],
-        [28.5285, 77.1155],
-        [28.5468, 77.1260],
-        [28.5710, 77.1460],
-        [28.5880, 77.1625],
-        [28.5765, 77.1850],
-        [28.5678, 77.2100],
-        [28.5695, 77.2435],
-        [28.5735, 77.2630],
-        [28.5760, 77.2850],
-        [28.5685, 77.3120],
-        [nPlace.lat, nPlace.lng]
-      ];
-    } else if (label === 'Least walking') {
-      corridor = [
-        [gPlace.lat, gPlace.lng],
-        [28.4722, 77.0725],
-        [28.5042, 77.0964],
-        [28.5468, 77.1260],
-        [28.5550, 77.1630],
-        [28.5450, 77.1950],
-        [28.5495, 77.2260],
-        [28.5515, 77.2517],
-        [28.5620, 77.2690],
-        [28.5720, 77.2880],
-        [28.5675, 77.3150],
-        [nPlace.lat, nPlace.lng]
-      ];
-    } else {
-      corridor = [
-        [gPlace.lat, gPlace.lng],
-        [28.4780, 77.0940],
-        [28.4980, 77.1420],
-        [28.5245, 77.1880],
-        [28.5260, 77.2190],
-        [28.5365, 77.2580],
-        [28.5430, 77.2850],
-        [28.5465, 77.3090],
-        [28.5565, 77.3240],
-        [nPlace.lat, nPlace.lng]
-      ];
-    }
-    return forward ? corridor : corridor.reverse();
-  }
-
-  const dLat = end.lat - start.lat;
-  const dLng = end.lng - start.lng;
-  const perpLat = -dLng;
-  const perpLng = dLat;
-  const norm = Math.max(0.001, Math.sqrt(perpLat * perpLat + perpLng * perpLng));
-  const uLat = perpLat / norm;
-  const uLng = perpLng / norm;
-  const distDeg = Math.sqrt(dLat * dLat + dLng * dLng);
-  const maxDeflection = Math.min(0.032, Math.max(0.004, distDeg * 0.16));
-  const sign = label === 'Fastest' ? 1.0 : label === 'Least walking' ? 0.45 : -0.75;
-  const fractions = [0.0, 0.12, 0.25, 0.38, 0.52, 0.66, 0.79, 0.90, 1.0];
-
-  return fractions.map((t, idx) => {
-    if (idx === 0) return [start.lat, start.lng];
-    if (idx === fractions.length - 1) return [end.lat, end.lng];
-    const arch = Math.sin(t * Math.PI) * maxDeflection * sign;
-    const ripple = Math.sin(t * 2.0 * Math.PI) * (maxDeflection * 0.28);
-    const offset = arch + ripple;
-    return [start.lat + dLat * t + uLat * offset, start.lng + dLng * t + uLng * offset];
-  });
+function mapCrowdLevel(raw?: string): CrowdLevel {
+  if (!raw) return 'Medium';
+  const norm = raw.toLowerCase();
+  if (norm === 'high') return 'High';
+  if (norm === 'low') return 'Low';
+  return 'Medium';
 }
 
-function buildSteps(
-  start: DelhiPlace,
-  end: DelhiPlace,
-  vehicle: VehicleMode,
-  distanceKm: number,
-  label: RouteLabel,
-  reachBy?: string
-): RouteStep[] {
-  const suffix = reachBy ? ` (by ${reachBy})` : '';
-  if (vehicle === 'Mix') {
-    const metroMin = Math.max(8, Math.round(distanceKm * 1.62));
-    const busMin = Math.max(10, Math.round(distanceKm * 1.95));
-    if (label === 'Fastest') {
-      return [
-        { mode: 'Walk', text: `Walk to ${start.name} gate`, minutes: 3 },
-        { mode: 'Metro', text: `DMRC Express line toward ${end.area}${suffix}`, minutes: metroMin },
-        { mode: 'Bike', text: `Last-mile electric bike to ${end.name}`, minutes: 4 }
-      ];
-    }
-    if (label === 'Least walking') {
-      return [
-        { mode: 'Bike', text: `Feeder e-rickshaw from ${start.name}`, minutes: 3 },
-        { mode: 'Metro', text: `Direct Metro corridor to ${end.area}${suffix}`, minutes: metroMin + 2 },
-        { mode: 'Car', text: `Shared auto drop at ${end.name}`, minutes: 3 }
-      ];
-    }
-    return [
-      { mode: 'Walk', text: `Walk to ${start.area} stop`, minutes: 4 },
-      { mode: 'Bus', text: `DTC AC feeder bus via Ring Road`, minutes: Math.max(6, Math.round(busMin * 0.45)) },
-      { mode: 'Metro', text: `Metro interchange to ${end.name}${suffix}`, minutes: Math.max(7, Math.round(metroMin * 0.62)) },
-      { mode: 'Walk', text: `Walk to ${end.name} entrance`, minutes: 4 }
-    ];
-  }
-
-  const perKmFactor =
-    vehicle === 'Walk'
-      ? 11.6
-      : vehicle === 'Bus'
-      ? 2.05
-      : vehicle === 'Metro'
-      ? 1.73
-      : vehicle === 'Train'
-      ? 1.75
-      : vehicle === 'Bike'
-      ? 1.70
-      : 1.66;
-  const baseMin = Math.max(8, Math.round(distanceKm * perKmFactor));
-  if (label === 'Fastest') {
-    return [
-      { mode: vehicle, text: `Via primary corridor from ${start.name}`, minutes: baseMin },
-      { mode: vehicle, text: `Arrive at ${end.name}${suffix}`, minutes: 3 }
-    ];
-  }
-  if (label === 'Least walking') {
-    return [
-      { mode: vehicle, text: `Via Outer Ring Rd from ${start.name}`, minutes: baseMin + 1 },
-      { mode: vehicle, text: `Direct drop at ${end.name}${suffix}`, minutes: 2 }
-    ];
-  }
-  return [
-    { mode: vehicle, text: `Toll-free arterial route from ${start.area}`, minutes: baseMin + 2 },
-    { mode: vehicle, text: `Arrive at ${end.name}${suffix}`, minutes: 2 }
-  ];
+function mapLabel(raw?: string): RouteLabel {
+  if (raw === 'Least walking' || raw === 'Least Walking') return 'Least walking';
+  if (raw === 'Cheapest') return 'Cheapest';
+  return 'Fastest';
 }
 
-// Stable async signature returning 3 realistic routes after a 600ms delay
 export async function getRoutes(
   start: DelhiPlace,
   end: DelhiPlace,
   vehicle: VehicleMode,
   reachBy?: string
 ): Promise<Route[]> {
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  const baseUrl = getBackendBaseUrl();
 
-  const straightKm = Math.max(1.2, haversineKm(start.lat, start.lng, end.lat, end.lng));
-  const windingFactor = straightKm >= 20.0 ? 1.455 : straightKm >= 10.0 ? 1.38 : 1.30;
-  const baseRoadKm = Math.round(straightKm * windingFactor * 10) / 10;
+  if (vehicle === 'Mix') {
+    const res = await fetch(`${baseUrl}/api/journeys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        start: {
+          lat: start.lat,
+          lng: start.lng,
+          name: start.name,
+          stationId: start.stationId
+        },
+        end: {
+          lat: end.lat,
+          lng: end.lng,
+          name: end.name,
+          stationId: end.stationId
+        },
+        reachByTime: reachBy
+      })
+    });
 
-  const fastestKm = baseRoadKm;
-  const leastWalkKm = Math.round(baseRoadKm * 1.02 * 10) / 10;
-  const cheapestKm = Math.round(baseRoadKm * 1.05 * 10) / 10;
-
-  const fastestSteps = buildSteps(start, end, vehicle, fastestKm, 'Fastest', reachBy);
-  const leastWalkSteps = buildSteps(start, end, vehicle, leastWalkKm, 'Least walking', reachBy);
-  const cheapestSteps = buildSteps(start, end, vehicle, cheapestKm, 'Cheapest', reachBy);
-
-  const fastestMinutes = fastestSteps.reduce((s, step) => s + step.minutes, 0);
-  const leastWalkMinutes = Math.max(fastestMinutes + 1, leastWalkSteps.reduce((s, step) => s + step.minutes, 0));
-  const cheapestMinutes = Math.max(fastestMinutes + 3, cheapestSteps.reduce((s, step) => s + step.minutes, 0));
-
-  const fastestCost = calculateRouteCostInr(vehicle, fastestSteps, fastestKm, 1.0);
-  const cheapestCost = Math.min(
-    fastestCost > 15 ? fastestCost - 10 : fastestCost,
-    calculateRouteCostInr(vehicle, cheapestSteps, fastestKm, 0.88)
-  );
-  const leastWalkCost = calculateRouteCostInr(vehicle, leastWalkSteps, leastWalkKm, 1.06);
-
-  const isPrivate = vehicle === 'Car' || vehicle === 'Bike' || vehicle === 'Walk';
-
-  return [
-    {
-      id: `route_fastest_${vehicle.toLowerCase()}`,
-      label: 'Fastest',
-      minutes: fastestMinutes,
-      costInr: fastestCost,
-      distanceKm: fastestKm,
-      transfers: isPrivate ? 0 : 1,
-      walkMeters: isPrivate ? (vehicle === 'Walk' ? Math.round(fastestKm * 1000) : 50) : 320,
-      crowd: 'Low',
-      dataLabel: 'TIMETABLE',
-      reliability: 9,
-      steps: fastestSteps,
-      path: buildDelhiCorridorPath(start, end, 'Fastest')
-    },
-    {
-      id: `route_least_walk_${vehicle.toLowerCase()}`,
-      label: 'Least walking',
-      minutes: leastWalkMinutes,
-      costInr: leastWalkCost,
-      distanceKm: leastWalkKm,
-      transfers: 0,
-      walkMeters: vehicle === 'Walk' ? Math.round(leastWalkKm * 960) : 40,
-      crowd: 'Medium',
-      dataLabel: 'ESTIMATED',
-      reliability: 9,
-      steps: leastWalkSteps,
-      path: buildDelhiCorridorPath(start, end, 'Least walking')
-    },
-    {
-      id: `route_cheapest_${vehicle.toLowerCase()}`,
-      label: 'Cheapest',
-      minutes: cheapestMinutes,
-      costInr: cheapestCost,
-      distanceKm: cheapestKm,
-      transfers: isPrivate ? 0 : 1,
-      walkMeters: isPrivate ? (vehicle === 'Walk' ? Math.round(cheapestKm * 1040) : 80) : 480,
-      crowd: 'High',
-      dataLabel: 'SAMPLE',
-      reliability: 8,
-      steps: cheapestSteps,
-      path: buildDelhiCorridorPath(start, end, 'Cheapest')
+    if (!res.ok) {
+      throw new Error(`Journey API error: HTTP ${res.status}`);
     }
-  ];
+
+    const payload = (await res.json()) as {
+      status?: string;
+      journeys?: Array<{
+        id: string;
+        label: string;
+        totalDurationSeconds: { value: number | null; status: string };
+        totalFare: {
+          value: { amountInr: number | null; isEstimate: boolean } | null;
+          status: string;
+        };
+        totalDistanceMeters: number;
+        transfers: number;
+        totalWalkMeters: number;
+        lowestConfidence: number;
+        overallStatus: string;
+        legs: Array<{
+          legId: string;
+          mode: string;
+          instruction: string;
+          durationSeconds: { value: number | null };
+          path: [number, number][];
+        }>;
+      }>;
+    };
+
+    if (payload.status === 'no_data' || !Array.isArray(payload.journeys)) {
+      return [];
+    }
+
+    return payload.journeys.map((j) => {
+      const durationSec = Math.max(60, Math.round(j.totalDurationSeconds?.value ?? 60));
+      const fareFormatted = formatVerifiedFareDisplay({
+        fareInr: j.totalFare?.value?.amountInr ?? null,
+        isEstimate: Boolean(j.totalFare?.value?.isEstimate),
+        status: j.totalFare?.status ?? 'unavailable'
+      });
+
+      const steps: RouteStep[] = (j.legs ?? []).map((leg) => {
+        const legSec = Math.max(60, Math.round(leg.durationSeconds?.value ?? 60));
+        return {
+          mode: mapModeString(leg.mode),
+          text: leg.instruction,
+          durationSeconds: legSec,
+          minutes: Math.max(1, Math.round(legSec / 60))
+        };
+      });
+
+      const mergedPath: [number, number][] = [];
+      for (const leg of j.legs ?? []) {
+        for (const pt of leg.path ?? []) {
+          mergedPath.push(pt);
+        }
+      }
+
+      return {
+        id: j.id,
+        label: mapLabel(j.label),
+        durationSeconds: durationSec,
+        minutes: Math.max(1, Math.round(durationSec / 60)),
+        costInr: fareFormatted.costInr,
+        costDisplay: fareFormatted.costDisplay,
+        isEstimate: fareFormatted.isEstimate,
+        distanceKm: Math.round(((j.totalDistanceMeters ?? 1000) / 1000) * 10) / 10,
+        transfers: j.transfers ?? 0,
+        walkMeters: j.totalWalkMeters ?? 0,
+        crowd: 'Medium',
+        dataLabel: mapEnvelopeStatusToDataLabel(j.overallStatus),
+        reliability: Math.max(1, Math.min(10, Math.round((j.lowestConfidence ?? 0.85) * 10))),
+        steps,
+        path:
+          mergedPath.length >= 2
+            ? mergedPath
+            : [
+                [start.lat, start.lng],
+                [end.lat, end.lng]
+              ],
+        rawJourneyPayload: j
+      };
+    });
+  }
+
+  const res = await fetch(`${baseUrl}/api/routes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      start: {
+        lat: start.lat,
+        lng: start.lng,
+        name: start.name,
+        stationId: start.stationId
+      },
+      end: {
+        lat: end.lat,
+        lng: end.lng,
+        name: end.name,
+        stationId: end.stationId
+      },
+      mode: vehicle.toLowerCase(),
+      reachByTime: reachBy
+    })
+  });
+
+  if (!res.ok) {
+    throw new Error(`Routes API error: HTTP ${res.status}`);
+  }
+
+  const payload = (await res.json()) as {
+    status?: string;
+    routes?: Array<{
+      id: string;
+      label: string;
+      durationSeconds: { value: number | null; status: string };
+      distanceMeters: number;
+      fare: {
+        value: { fareInr: number | null; isEstimate?: boolean } | null;
+        status: string;
+      };
+      transfers: number;
+      walkMeters: number;
+      crowdLevel?: string;
+      reliabilityScore?: number;
+      steps: Array<{
+        mode: string;
+        instruction: string;
+        durationSeconds: { value: number | null } | number;
+      }>;
+      path: [number, number][];
+    }>;
+  };
+
+  if (payload.status === 'no_data' || !Array.isArray(payload.routes)) {
+    return [];
+  }
+
+  return payload.routes.map((r) => {
+    const durationSec = Math.max(60, Math.round(r.durationSeconds?.value ?? 60));
+    const fareStatus = r.fare?.status ?? 'unavailable';
+    const fareFormatted = formatVerifiedFareDisplay({
+      fareInr: r.fare?.value?.fareInr ?? null,
+      isEstimate: Boolean(r.fare?.value?.isEstimate) || fareStatus === 'estimate',
+      status: fareStatus
+    });
+
+    const steps: RouteStep[] = (r.steps ?? []).map((step) => {
+      const rawStepSec =
+        typeof step.durationSeconds === 'number'
+          ? step.durationSeconds
+          : (step.durationSeconds?.value ?? 60);
+      const stepSec = Math.max(60, Math.round(rawStepSec));
+      return {
+        mode: mapModeString(step.mode),
+        text: step.instruction,
+        durationSeconds: stepSec,
+        minutes: Math.max(1, Math.round(stepSec / 60))
+      };
+    });
+
+    return {
+      id: r.id,
+      label: mapLabel(r.label),
+      durationSeconds: durationSec,
+      minutes: Math.max(1, Math.round(durationSec / 60)),
+      costInr: fareFormatted.costInr,
+      costDisplay: fareFormatted.costDisplay,
+      isEstimate: fareFormatted.isEstimate,
+      distanceKm: Math.round(((r.distanceMeters ?? 1000) / 1000) * 10) / 10,
+      transfers: r.transfers ?? 0,
+      walkMeters: r.walkMeters ?? 0,
+      crowd: mapCrowdLevel(r.crowdLevel),
+      dataLabel: mapEnvelopeStatusToDataLabel(r.durationSeconds?.status),
+      reliability: r.reliabilityScore ?? 8,
+      steps,
+      path:
+        Array.isArray(r.path) && r.path.length >= 2
+          ? r.path
+          : [
+              [start.lat, start.lng],
+              [end.lat, end.lng]
+            ]
+    };
+  });
 }

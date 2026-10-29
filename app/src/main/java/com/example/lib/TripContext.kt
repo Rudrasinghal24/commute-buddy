@@ -246,6 +246,13 @@ class TripStateHolder(
         selectedRoute = rec ?: result.firstOrNull()
         routesLoadState = if (result.isEmpty()) DataLoadState.EMPTY else DataLoadState.READY
     }
+
+    internal fun onSearchError() {
+        routes = emptyList()
+        recommendedRoute = null
+        selectedRoute = null
+        routesLoadState = DataLoadState.ERROR
+    }
 }
 
 val LocalTripContext = compositionLocalOf<TripStateHolder> {
@@ -267,13 +274,17 @@ fun TripContextProvider(
     LaunchedEffect(start, end, vehicle, reachBy, searchCount) {
         if (start != null && end != null && searchCount > 0) {
             holder.onSearchLoading()
-            val generated = getRoutes(
-                start = start,
-                end = end,
-                vehicle = vehicle,
-                reachBy = reachBy
-            )
-            holder.onSearchSuccess(generated)
+            try {
+                val generated = getRoutes(
+                    start = start,
+                    end = end,
+                    vehicle = vehicle,
+                    reachBy = reachBy
+                )
+                holder.onSearchSuccess(generated)
+            } catch (_: Exception) {
+                holder.onSearchError()
+            }
         }
     }
 

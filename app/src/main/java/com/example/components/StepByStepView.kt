@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.DataLoadState
+import com.example.lib.CommuteFormatters
 import com.example.lib.Route
 import com.example.ui.theme.MapsAccentBlue
 import com.example.ui.theme.MapsBorder
@@ -81,7 +82,7 @@ fun StepByStepView(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${route.minutes} min • ₹${route.costInr}",
+                    text = "${CommuteFormatters.formatDuration(route.durationSeconds)} • ${route.costDisplay}",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MapsTextPrimary
                 )
@@ -168,9 +169,9 @@ fun StepByStepView(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Right: step duration in minutes
+                        // Right: step duration formatted from seconds
                         Text(
-                            text = "${step.minutes} min",
+                            text = CommuteFormatters.formatDuration(step.durationSeconds),
                             style = MaterialTheme.typography.labelLarge,
                             color = MapsAccentBlue,
                             modifier = Modifier.padding(top = 8.dp)

@@ -13,15 +13,20 @@ enum class CrowdLevel(val display: String) {
 }
 
 enum class DataSourceLabel(val display: String) {
+    LIVE("LIVE"),
     TIMETABLE("TIMETABLE"),
-    SAMPLE("SAMPLE"),
-    ESTIMATED("ESTIMATED")
+    ESTIMATED("ESTIMATED"),
+    STALE("STALE"),
+    UNVERIFIED("UNVERIFIED"),
+    UNAVAILABLE("UNAVAILABLE"),
+    SAMPLE("SAMPLE")
 }
 
 data class RouteStep(
     val mode: TravelMode,
     val text: String,
-    val minutes: Int
+    val minutes: Int,
+    val durationSeconds: Int = minutes * 60
 )
 
 data class Route(
@@ -36,5 +41,9 @@ data class Route(
     val dataLabel: DataSourceLabel,
     val reliability: Int, // 0..10
     val steps: List<RouteStep>,
-    val path: List<Pair<Double, Double>> // [lat, lng][]
+    val path: List<Pair<Double, Double>>, // [lat, lng][]
+    val durationSeconds: Int = minutes * 60,
+    val costDisplay: String = "₹$costInr",
+    val isEstimate: Boolean = false,
+    val rawJourneyJson: String? = null
 )
